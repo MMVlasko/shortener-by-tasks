@@ -1,0 +1,9 @@
+Django>=4.2
+djangorestframework
+drf-spectacular
+psycopg2-binary
+python-dotenv
+django-cors-headers
+bcrypt
+qrcode
+Pillow
