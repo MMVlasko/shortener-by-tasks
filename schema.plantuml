@@ -1,0 +1,39 @@
+@startuml
+
+entity auth_user {
+  * id : BIGSERIAL <<PK>>
+  --
+  password : VARCHAR(128) <<NOT NULL>>
+  last_login : TIMESTAMP <<NOT NULL>> <<DEFAULT NOW()>>,
+  is_superuser : BOOLEAN <<NOT NULL>>,
+  username : VARCHAR(150) <<NOT NULL>> <<UNIQUE>>,
+  first_name : VARCHAR(150) <<NOT NULL>>,
+  last_name : VARCHAR(150) <<NOT NULL>>,
+  email : VARCHAR(254) <<NOT NULL>>,
+  is_staff : BOOLEAN <<NOT NULL>>,
+  is_active : BOOLEAN <<NOT NULL>>,
+  date_joined : TIMESTAMP <<NOT NULL>> <<DEFAULT NOW()>>
+}
+
+entity links {
+  short : CHAR(6) <<PK>>
+  --
+  original : TEXT <<NOT NULL>>
+  user_id : BIGINTEGER <<FK>>
+  created_at : TIMESTAMP <<NOT NULL>> <<DEFAULT NOW()>>
+  updated_at : TIMESTAMP <<NOT NULL>> <<DEFAULT NOW()>>
+}
+
+entity visits {
+  * id : BIGSERIAL <<PK>>
+  --
+  link_id : CHAR(6) <<FK>> <<NOT NULL>>
+  browser : TEXT <<NOT NULL>>
+  datetime : TIMESTAMP <<NOT NULL>> <<DEFAULT NOW()>>
+}
+
+
+
+links "0..n  " --^ "1     "  auth_user  : " user_id:id"
+visits "0..n  " --^ "1     "  links  : " link_id:short"
+@enduml
