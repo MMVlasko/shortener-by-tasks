@@ -29,7 +29,6 @@ INSTALLED_APPS = [
     'rest_framework',
     'drf_spectacular',
     'corsheaders',
-    'users',
     'links'
 ]
 
@@ -209,6 +208,5 @@ if DEBUG:
         'django.middleware.csrf.CsrfViewMiddleware',
         'django.contrib.auth.middleware.AuthenticationMiddleware',
         'django.contrib.messages.middleware.MessageMiddleware',
-        'django.middleware.clickjacking.XFrameOptionsMiddleware',
-        'shortener.middleware.DisableCSRFForAPI',
+        'django.middleware.clickjacking.XFrameOptionsMiddleware'
     ]
