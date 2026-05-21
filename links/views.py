@@ -1,18 +1,31 @@
-from links.models import Link
-from links.serializers import LinkCreateAndUpdateSerializer, LinkSerializer
-from links.serializers import ErrorSerializer
+from links.models import Link, Visit
+from links.serializers import LinkCreateAndUpdateSerializer, LinkSerializer, GetLinkSerializer, VisitSerializer
+from users.serializers import ErrorSerializer
 from .shortener import generate_short_alias
 
+import threading
+from io import BytesIO
 from datetime import datetime
 
+import qrcode
 from django.http import HttpResponse
+from django.utils import timezone
 from django.views import View
 from django.shortcuts import redirect
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
+
+
+class LinkAndVisitLimitOffsetPagination(LimitOffsetPagination):
+    default_limit = 10
+    limit_query_param = 'limit'
+    offset_query_param = 'offset'
+    max_limit = 100
 
 
 class CreateLinkAPIView(APIView):
@@ -36,17 +49,28 @@ class CreateLinkAPIView(APIView):
             original_url = serializer.validated_data['original']
             is_new = True
 
-            existing_link = Link.objects.filter(
-                original=original_url,
-                user__isnull=True
-            )
+            user = request.user if request.user.is_authenticated else None
+
+            if user:
+                existing_link = Link.objects.filter(
+                    original=original_url,
+                    user=user
+                )
+            else:
+                existing_link = Link.objects.filter(
+                    original=original_url,
+                    user__isnull=True
+                )
 
             if existing_link.exists():
                 link = existing_link.first()
                 is_new = False
                 status_code = status.HTTP_200_OK
             else:
-                short = generate_short_alias(original_url)
+                if user:
+                    short = generate_short_alias(user.username + original_url)
+                else:
+                    short = generate_short_alias(original_url)
                 if Link.objects.filter(short=short).exists():
                     for _ in range(1000):
                         short = generate_short_alias(str(datetime.now()) + original_url)
@@ -60,7 +84,8 @@ class CreateLinkAPIView(APIView):
 
                 link = Link.objects.create(
                     original=original_url,
-                    short=short
+                    short=short,
+                    user=user
                 )
                 status_code = status.HTTP_201_CREATED
 
@@ -92,3 +117,118 @@ class RedirectView(View):
                 <address>Shortener App by MAI S.T.</address>
                 </body></html>
             ''', status=status.HTTP_404_NOT_FOUND)
+
+
+class GetMyLinksAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    pagination_class = LinkAndVisitLimitOffsetPagination
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name='limit',
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description='Количество записей на странице (по умолчанию 10)',
+                required=False
+            ),
+            OpenApiParameter(
+                name='offset',
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description='Смещение от начала (по умолчанию 0)',
+                required=False
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=GetLinkSerializer(many=True),
+                description='Список ссылок текущего пользователя с пагинацией'
+            ),
+            401: ErrorSerializer,
+        },
+        description='Получение всех ссылок текущего пользователя с пагинацией'
+    )
+    def get(self, request):
+        queryset = Link.objects.raw('''
+            SELECT l.short, l.original, created_at, updated_at
+            FROM links l
+            WHERE l.user_id = %s
+        ''', (request.user.id,))
+
+        paginator = self.pagination_class()
+        paginated_queryset = paginator.paginate_queryset(queryset, request)
+
+        serializer = GetLinkSerializer(paginated_queryset, many=True, context={'request': request})
+
+        return paginator.get_paginated_response(serializer.data)
+
+
+class SearchInMyLinksAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    pagination_class = LinkAndVisitLimitOffsetPagination
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name='limit',
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description='Количество записей на странице (по умолчанию 10)',
+                required=False
+            ),
+            OpenApiParameter(
+                name='offset',
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description='Смещение от начала (по умолчанию 0)',
+                required=False
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=GetLinkSerializer(many=True),
+                description='Список ссылок, содержащих данную подстроку'
+            ),
+            401: ErrorSerializer,
+        },
+        description='Получение всех ссылок текущего пользователя с пагинацией, содержащих данную подстроку'
+    )
+    def get(self, request, keyword):
+        queryset = Link.objects.raw('''
+            SELECT l.short, l.original,
+                   l.created_at, 
+                   l.updated_at
+            FROM links l
+            WHERE l.user_id = %s 
+              AND l.original ILIKE %s
+        ''', [request.user.id, f'%{keyword}%'])
+
+        paginator = self.pagination_class()
+        paginated_queryset = paginator.paginate_queryset(queryset, request)
+
+        serializer = GetLinkSerializer(paginated_queryset, many=True, context={'request': request})
+
+        return paginator.get_paginated_response(serializer.data)
+
+
+class GetLinkAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: LinkSerializer,
+            401: ErrorSerializer
+        },
+        description='Получение информации о данной ссылке'
+    )
+    def get(self, request, short):
+        try:
+            link = Link.objects.get(short=short)
+
+            return Response(LinkSerializer(link).data)
+        except Link.DoesNotExist:
+            return Response(
+                {'error': f'Короткая ссылка "{short}" не найдена'},
+                status=status.HTTP_404_NOT_FOUND
+            )

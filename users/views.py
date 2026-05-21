@@ -1,6 +1,6 @@
 from .serializers import (
     LoginSerializer, RegisterSerializer,
-    UserSerializer, ErrorSerializer
+    UserSerializer, ErrorSerializer, UserUpdateSerializer
 )
 
 from django.utils import timezone
@@ -78,3 +78,51 @@ class LogoutAPIView(APIView):
     def post(self, request):
         logout(request)
         return Response({'message': 'Успешный выход'})
+
+
+class ProfileAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: UserSerializer,
+            401: ErrorSerializer
+        },
+        description='Получение информации о текущем пользователе'
+    )
+    def get(self, request):
+        serializer = UserSerializer(request.user)
+
+        return Response(serializer.data)
+
+    @extend_schema(
+        request=UserUpdateSerializer,
+        responses={
+            200: UserSerializer,
+            400: ErrorSerializer,
+            401: ErrorSerializer
+        },
+        description='Обновление информации о пользователе'
+    )
+    def put(self, request):
+        serializer = UserUpdateSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(serializer.data)
+
+    @extend_schema(
+        request=None,
+        responses={
+            204: None,
+            400: ErrorSerializer,
+            401: ErrorSerializer
+        },
+        description='Удаление аккаунта текущего пользователя'
+    )
+    def delete(self, request):
+        user = request.user
+        user.delete()
+        logout(request)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)

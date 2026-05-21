@@ -60,5 +60,16 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'date_joined']
 
 
+class UserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['username', 'email', 'first_name', 'last_name']
+
+
+class TokenSerializer(serializers.Serializer):
+    token = serializers.CharField()
+    user = UserSerializer()
+
+
 class ErrorSerializer(serializers.Serializer):
     error = serializers.CharField()

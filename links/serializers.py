@@ -13,6 +13,16 @@ class LinkSerializer(serializers.ModelSerializer):
         ]
 
 
+class GetLinkSerializer(serializers.ModelSerializer):
+    clicks = serializers.IntegerField(required=False)
+
+    class Meta:
+        model = Link
+        fields = [
+            'short', 'original', 'clicks', 'user', 'created_at', 'updated_at'
+        ]
+
+
 class LinkCreateAndUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Link
@@ -37,7 +47,3 @@ class LinkCreateAndUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Введите корректный URL")
 
         return value
-
-
-class ErrorSerializer(serializers.Serializer):
-    error = serializers.CharField()
