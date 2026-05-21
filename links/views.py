@@ -100,6 +100,41 @@ class CreateLinkAPIView(APIView):
         )
 
 
+class GenerateQRCodeView(APIView):
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        description='Генерация QR-кода по данной короткой ссылке (https://{hostname}/{short}).',
+        responses={
+            200: OpenApiTypes.BINARY
+        },
+        parameters=[
+            OpenApiParameter(
+                name='short',
+                type=str,
+                location=OpenApiParameter.PATH,
+                description='Короткий идентификатор ссылки',
+                required=True
+            ),
+            OpenApiParameter(
+                name='size',
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description='Условный размер изображения QR-кода',
+                required=False
+            ),
+        ]
+    )
+    def get(self, request, short):
+        size = request.query_params.get('size')
+        img = qrcode.make(f'https://{request.get_host()}/{short}', box_size=size if size is not None else 10)
+        buffer = BytesIO()
+        img.save(buffer, format='PNG')
+        image_stream = buffer.getvalue()
+
+        return HttpResponse(image_stream, content_type='image/png')
+
+
 class RedirectView(View):
     @staticmethod
     def get(request, short):
