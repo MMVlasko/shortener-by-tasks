@@ -135,6 +135,96 @@ class GenerateQRCodeView(APIView):
         return HttpResponse(image_stream, content_type='image/png')
 
 
+class UpdateLinkAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=LinkCreateAndUpdateSerializer,
+        responses={
+            200: LinkSerializer,
+            400: ErrorSerializer,
+            401: ErrorSerializer,
+            403: ErrorSerializer,
+            404: ErrorSerializer
+        },
+        description='Обновление оригинального URL у существующей короткой ссылки. Доступно только владельцу.'
+    )
+    def put(self, request, short):
+        try:
+            serializer = LinkCreateAndUpdateSerializer(data=request.data)
+
+            if serializer.is_valid():
+                link = Link.objects.get(short=short)
+
+                if link.user != request.user:
+                    return Response(
+                        {'error': 'У вас нет прав для редактирования этой ссылки'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+                existing_link = Link.objects.filter(
+                    original=serializer.validated_data['original'],
+                    user=request.user
+                )
+
+                if existing_link.exists():
+                    return Response(
+                        {'error': f'Короткая ссылка на {serializer.validated_data["original"]}'
+                                  ' создана Вами ранее'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                link.original = serializer.validated_data['original']
+                link.updated_at = timezone.now()
+                link.save()
+
+                response_serializer = LinkSerializer(link, context={'request': request})
+                return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+            return Response(
+                {'error': serializer.errors['original'][0]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        except Link.DoesNotExist:
+            return Response(
+                {'error': f'Короткая ссылка {short} не найдена'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class DeleteLinkAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            204: None,
+            401: ErrorSerializer,
+            403: ErrorSerializer,
+            404: ErrorSerializer
+        },
+        description='Удаление существующей короткой ссылки. Доступно только владельцу.'
+    )
+    def delete(self, request, short):
+        try:
+            link = Link.objects.get(short=short)
+
+            if link.user != request.user:
+                return Response(
+                    {'error': 'У вас нет прав для удаления этой ссылки'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            link.delete()
+
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        except Link.DoesNotExist:
+            return Response(
+                {'error': f'Короткая ссылка {short} не найдена'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
 def log(link, browser, time):
     visit = Visit(link=link, browser=browser, datetime=time)
     visit.save()
