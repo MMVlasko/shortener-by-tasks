@@ -2,7 +2,7 @@ from django.core.validators import URLValidator
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 
-from .models import Link
+from .models import Link, Visit
 
 
 class LinkSerializer(serializers.ModelSerializer):
@@ -47,3 +47,11 @@ class LinkCreateAndUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Введите корректный URL")
 
         return value
+
+
+class VisitSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Visit
+        fields = [
+            'id', 'browser', 'datetime', 'link'
+        ]

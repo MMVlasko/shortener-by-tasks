@@ -32,3 +32,20 @@ class Link(models.Model):
 
     created_at = models.DateTimeField('Создан', auto_now_add=True)
     updated_at = models.DateTimeField('Обновлен', auto_now=True)
+
+
+class Visit(models.Model):
+    class Meta:
+        db_table = 'visits'
+
+    id = models.BigAutoField(primary_key=True)
+
+    link = models.ForeignKey(
+        Link,
+        on_delete=models.CASCADE,
+        related_name='visits'
+    )
+
+    browser = models.TextField('Браузер запрашивающего', null=True)
+
+    datetime = models.DateTimeField('Дата и время обращения', auto_now_add=True)

@@ -135,11 +135,19 @@ class GenerateQRCodeView(APIView):
         return HttpResponse(image_stream, content_type='image/png')
 
 
+def log(link, browser, time):
+    visit = Visit(link=link, browser=browser, datetime=time)
+    visit.save()
+
+
 class RedirectView(View):
     @staticmethod
     def get(request, short):
         try:
             link = Link.objects.get(short=short)
+            thread = threading.Thread(target=log, args=(link, request.headers.get('User-Agent', ''),
+                                                        datetime.now()))
+            thread.start()
             return redirect(link.original)
         except Link.DoesNotExist:
             return HttpResponse(f'''
@@ -186,9 +194,10 @@ class GetMyLinksAPIView(APIView):
     )
     def get(self, request):
         queryset = Link.objects.raw('''
-            SELECT l.short, l.original, created_at, updated_at
-            FROM links l
+            SELECT l.short, l.original, COUNT(v.id) as clicks, created_at, updated_at
+            FROM links l LEFT JOIN visits v ON v.link_id = l.short
             WHERE l.user_id = %s
+            GROUP BY l.short, v.link_id
         ''', (request.user.id,))
 
         paginator = self.pagination_class()
@@ -231,12 +240,15 @@ class SearchInMyLinksAPIView(APIView):
     )
     def get(self, request, keyword):
         queryset = Link.objects.raw('''
-            SELECT l.short, l.original,
+            SELECT l.short, l.original, 
+                   COUNT(v.id) as clicks, 
                    l.created_at, 
                    l.updated_at
-            FROM links l
+            FROM links l 
+            LEFT JOIN visits v ON v.link_id = l.short
             WHERE l.user_id = %s 
               AND l.original ILIKE %s
+            GROUP BY l.short, l.original, l.created_at, l.updated_at
         ''', [request.user.id, f'%{keyword}%'])
 
         paginator = self.pagination_class()
@@ -245,6 +257,64 @@ class SearchInMyLinksAPIView(APIView):
         serializer = GetLinkSerializer(paginated_queryset, many=True, context={'request': request})
 
         return paginator.get_paginated_response(serializer.data)
+
+
+class GetVisitsByLinkAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    pagination_class = LinkAndVisitLimitOffsetPagination
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                name='limit',
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description='Количество записей на странице (по умолчанию 10)',
+                required=False
+            ),
+            OpenApiParameter(
+                name='offset',
+                type=int,
+                location=OpenApiParameter.QUERY,
+                description='Смещение от начала (по умолчанию 0)',
+                required=False
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=VisitSerializer(many=True),
+                description='Список посещений ссылки'
+            ),
+            401: ErrorSerializer,
+        },
+        description='Получение всех посещений данной ссылки'
+    )
+    def get(self, request, short):
+        try:
+            link = Link.objects.get(short=short)
+
+            if link.user != request.user:
+                return Response(
+                    {'error': 'У вас нет прав для просмотра посещений этой ссылки'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            queryset = Visit.objects.filter(link=link)
+
+            queryset = queryset.order_by('-datetime')
+
+            paginator = self.pagination_class()
+            paginated_queryset = paginator.paginate_queryset(queryset, request)
+
+            serializer = VisitSerializer(paginated_queryset, many=True, context={'request': request})
+
+            return paginator.get_paginated_response(serializer.data)
+
+        except Link.DoesNotExist:
+            return Response(
+                {'error': f'Короткая ссылка "{short}" не найдена'},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
 
 class GetLinkAPIView(APIView):
